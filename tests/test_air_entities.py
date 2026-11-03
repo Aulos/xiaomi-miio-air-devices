@@ -16,6 +16,7 @@ from custom_components.xiaomi_miio.air_devices import CA6, MC6, AirDevice
 from custom_components.xiaomi_miio.air_entities import (
     AirPurifier6Plus,
     AirSensor,
+    FavoriteLevel,
     SmartmiHumidifier3,
     setup_air_entities,
 )
@@ -130,3 +131,18 @@ def test_legacy_model_keeps_original_path():
     entry = SimpleNamespace(data={"model": "zhimi.humidifier.ca4"})
     assert setup_air_entities("humidifier", entry, add) is False
     add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_favorite_level_exposes_numeric_ha_state(environment):
+    hass, coordinator, entry = environment
+    level = FavoriteLevel(entry(MC6), "favorite_level", "Favorite level")
+    level.hass = hass
+    coordinator.data.update(mode=5, favorite_level=9)
+    assert level.available
+    assert level.state == 9
+    coordinator.data["favorite_level"] = 0
+    assert level.available
+    assert level.state == 0
+    coordinator.data["favorite_level"] = None
+    assert not level.available

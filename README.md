@@ -1,6 +1,6 @@
 # Xiaomi Miio test integration for HA 2026.10.4
 
-Adds `xiaomi.airp.mc6` and `zhimi.humidifier.ca6` to a copy of the built-in Xiaomi Miio integration. This is a local test build, version `2026.10.4.1`, not an upstream release.
+Adds `xiaomi.airp.mc6` and `zhimi.humidifier.ca6` to a copy of the built-in Xiaomi Miio integration. This is a local test build, version `2026.10.4.2`, not an upstream release.
 
 The library dependencies remain exactly those of HA 2026.10.4. A small adapter uses python-miio 0.5.12's existing MIoT transport and the two models' property mappings. The CA6 mapping comes from upstream python-miio; MC6 comes from its published MIoT specification. There is no cloud dependency for polling or controlling either new model when configured manually.
 
@@ -41,7 +41,7 @@ This is a custom repository, not a listing in the default HACS store.
 ## Manual installation on HA OS
 
 1. Make a Home Assistant backup. If `/config/custom_components/xiaomi_miio` already exists, preserve that folder before proceeding; do not merge two custom implementations.
-2. Using your existing Samba, SSH or Studio Code Server access, copy the archive's `custom_components/xiaomi_miio` folder into `/config/custom_components/xiaomi_miio`. The resulting file must be `/config/custom_components/xiaomi_miio/manifest.json`, with version `2026.10.4.1`. Keep `THIRD_PARTY.md` and the licenses with your copy.
+2. Using your existing Samba, SSH or Studio Code Server access, copy the archive's `custom_components/xiaomi_miio` folder into `/config/custom_components/xiaomi_miio`. The resulting file must be `/config/custom_components/xiaomi_miio/manifest.json`, with version `2026.10.4.2`. Keep `THIRD_PARTY.md` and the licenses with your copy.
 3. Restart Home Assistant Core. HA will report that `xiaomi_miio` is a custom integration. This is expected. No pip commands inside the managed Core container are needed.
 4. In Settings → Devices & services → Add integration, select **Xiaomi Home**, the integration for domain `xiaomi_miio`. Choose **Configure manually**. Enter the purifier IP and token. Repeat for the humidifier. This avoids the Xiaomi account email-verification problem.
 5. Check the new entities and Settings → System → Logs. Compare initial readings with the device display/app before testing controls. Test power and modes one at a time and restore your preferred settings. For the humidifier, use a filled tank and confirm integer targets within 30–60%. Additional sensor and write behavior is still awaiting your hardware validation.

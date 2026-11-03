@@ -38,7 +38,7 @@ class AirEntity(XiaomiCoordinatedMiioEntity):
         self.key = key
         self._attr_name = name
 
-    def value(self, key):
+    def reading(self, key):
         return self.coordinator.data.get(key)
 
     async def write(self, key, value):
@@ -51,12 +51,12 @@ class AirEntity(XiaomiCoordinatedMiioEntity):
     @property
     def available(self):
         return super().available and (
-            self.key is None or self.value(self.key) is not None
+            self.key is None or self.reading(self.key) is not None
         )
 
     @property
     def is_on(self):
-        return self.value("power")
+        return self.reading("power")
 
     async def async_turn_on(self, **kwargs):
         await self.write("power", True)
@@ -78,7 +78,7 @@ class AirPurifier6Plus(AirEntity, FanEntity):
     @property
     def preset_mode(self):
         return next(
-            (name for name, value in MODES[MC6].items() if value == self.value("mode")),
+            (name for name, value in MODES[MC6].items() if value == self.reading("mode")),
             None,
         )
 
@@ -108,16 +108,16 @@ class SmartmiHumidifier3(AirEntity, HumidifierEntity):
 
     @property
     def current_humidity(self):
-        return self.value("humidity")
+        return self.reading("humidity")
 
     @property
     def target_humidity(self):
-        return self.value("target_humidity")
+        return self.reading("target_humidity")
 
     @property
     def mode(self):
         return next(
-            (name for name, value in MODES[CA6].items() if value == self.value("mode")),
+            (name for name, value in MODES[CA6].items() if value == self.reading("mode")),
             None,
         )
 
@@ -128,7 +128,7 @@ class SmartmiHumidifier3(AirEntity, HumidifierEntity):
 
     async def async_set_humidity(self, humidity):
         await self.write("target_humidity", humidity)
-        if self.value("mode") != MODES[CA6]["Auto"]:
+        if self.reading("mode") != MODES[CA6]["Auto"]:
             await self.async_set_mode("Auto")
 
 
@@ -177,14 +177,14 @@ class AirSensor(AirEntity, SensorEntity):
 
     @property
     def native_value(self):
-        value = self.value(self.key)
+        value = self.reading(self.key)
         return ENUM_SENSORS[self.key].get(value) if self.key in ENUM_SENSORS else value
 
 
 class AirSwitch(AirEntity, SwitchEntity):
     @property
     def is_on(self):
-        return self.value(self.key)
+        return self.reading(self.key)
 
     async def async_turn_on(self, **kwargs):
         await self.write(self.key, True)
@@ -203,7 +203,7 @@ class FavoriteLevel(AirEntity, NumberEntity):
 
     @property
     def native_value(self):
-        return self.value("favorite_level")
+        return self.reading("favorite_level")
 
 
 def setup_air_entities(platform, entry, async_add_entities):

@@ -20,6 +20,6 @@
   "zeroconf": [
     "_miio._udp.local."
   ],
-  "version": "2026.10.4.1",
+  "version": "2026.10.4.2",
   "issue_tracker": "https://github.com/Aulos/xiaomi-miio-air-devices/issues"
 }
