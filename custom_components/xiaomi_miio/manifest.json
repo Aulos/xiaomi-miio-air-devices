@@ -1,0 +1,25 @@
+{
+  "domain": "xiaomi_miio",
+  "name": "Xiaomi Home",
+  "codeowners": [
+    "@Aulos"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/Aulos/xiaomi-miio-air-devices",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "loggers": [
+    "micloud",
+    "miio"
+  ],
+  "requirements": [
+    "construct==2.10.68",
+    "micloud==0.5",
+    "python-miio==0.5.12"
+  ],
+  "zeroconf": [
+    "_miio._udp.local."
+  ],
+  "version": "2026.10.4.1",
+  "issue_tracker": "https://github.com/Aulos/xiaomi-miio-air-devices/issues"
+}
