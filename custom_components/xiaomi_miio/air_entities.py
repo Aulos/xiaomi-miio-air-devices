@@ -263,19 +263,6 @@ class AirSwitch(AirEntity, SwitchEntity):
         await self.write(self.key, False)
 
 
-class FavoriteLevel(AirEntity, NumberEntity):
-    _attr_native_min_value = 0
-    _attr_native_max_value = 9
-    _attr_native_step = 1
-
-    async def async_set_native_value(self, value):
-        await self.write("favorite_level", value)
-
-    @property
-    def native_value(self):
-        return self.reading("favorite_level")
-
-
 class AirSelect(AirEntity, SelectEntity):
     def __init__(self, entry, key, name, choices, *, advanced=False):
         super().__init__(entry, key, name)
@@ -295,6 +282,19 @@ class AirSelect(AirEntity, SelectEntity):
                 await self.write(self.key, value)
                 return
         raise HomeAssistantError("Unsupported option")
+
+
+class FavoriteLevel(AirSelect):
+    def __init__(self, entry, key="favorite_level", name="Favorite level"):
+        # Measured MC6 target RPMs on firmware 1.0.5; commands remain level IDs.
+        rpms = (400, 480, 650, 700, 800, 930, 1100, 1250, 1370, 1530)
+        super().__init__(
+            entry,
+            key,
+            name,
+            {level: f"Level {level} — {rpm} RPM" for level, rpm in enumerate(rpms)},
+        )
+        self._attr_entity_category = None
 
 
 class AdvancedNumber(AirEntity, NumberEntity):
@@ -371,17 +371,17 @@ def setup_air_entities(platform, entry, async_add_entities):
             for key in sorted(BOOL_WRITES[model] - {"power"})
         ]
     elif platform == "number" and model == MC6:
-        entities = [FavoriteLevel(entry, "favorite_level", "Favorite level")]
-        entities.extend(
+        entities = [
             AdvancedNumber(entry, key, name)
             for key, name in {
                 "update_heartbeat": "AQI update heartbeat (raw)",
                 "filter_debug_used_time": "Filter debug used time",
                 "filter_debug_used_life": "Filter debug used life",
             }.items()
-        )
+        ]
     elif platform == "select" and model == MC6:
         entities = [
+            FavoriteLevel(entry),
             AirSelect(
                 entry, "brightness", "Screen brightness", {0: "Dim", 1: "On", 2: "Mid"}
             ),

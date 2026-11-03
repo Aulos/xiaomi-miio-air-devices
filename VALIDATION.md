@@ -16,3 +16,7 @@ Fixed a shared `value` helper shadowing NumberEntity.value. The regression test 
 ## 2026.10.4.3
 
 54 tests pass against HA 2026.10.4. Extended tests check schema property/action IDs, write-only exclusion from polling, country/range validation, exact action messages and rejection handling, select commands, diagnostic defaults, raw string state limits, and unavailable/unknown values. Ruff and compilation pass for changed modules. No live commands were sent; added MC6 capabilities are schema-based and await local hardware validation. Existing entity IDs and CA6 behavior are retained.
+
+## 2026.10.4.4
+
+56 tests pass. Favorite is now a select using the ten locally measured target RPMs. Tests verify all labels map to integer level IDs, unknown/missing states, invalid options, and removal of only the device's old Favorite number registry entry. No device commands were sent during this update. UI verification on the user's HA installation remains pending.

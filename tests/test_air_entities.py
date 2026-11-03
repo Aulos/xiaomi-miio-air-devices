@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from miio import DeviceException
 
@@ -29,6 +31,9 @@ from custom_components.xiaomi_miio.const import CONF_FLOW_TYPE, MODELS_ALL
 @pytest.fixture
 async def environment(tmp_path):
     hass = HomeAssistant(str(tmp_path))
+    dr.async_setup(hass)
+    await dr.async_load(hass, load_empty=True)
+    await er.async_load(hass, load_empty=True)
     coordinator = DataUpdateCoordinator(
         hass, logging.getLogger(__name__), name="test", config_entry=None
     )
@@ -137,16 +142,16 @@ def test_legacy_model_keeps_original_path():
 
 
 @pytest.mark.asyncio
-async def test_favorite_level_exposes_numeric_ha_state(environment):
+async def test_favorite_level_exposes_rpm_options(environment):
     hass, coordinator, entry = environment
     level = FavoriteLevel(entry(MC6), "favorite_level", "Favorite level")
     level.hass = hass
     coordinator.data.update(mode=5, favorite_level=9)
     assert level.available
-    assert level.state == 9
+    assert level.state == "Level 9 — 1530 RPM"
     coordinator.data["favorite_level"] = 0
     assert level.available
-    assert level.state == 0
+    assert level.state == "Level 0 — 400 RPM"
     coordinator.data["favorite_level"] = None
     assert not level.available
 
@@ -201,3 +206,45 @@ async def test_brightness_and_action_commands(environment):
     config.runtime_data.device.perform_action.side_effect = DeviceException("rejected")
     with pytest.raises(HomeAssistantError):
         await button.async_press()
+
+
+@pytest.mark.asyncio
+async def test_favorite_dropdown_writes_levels_not_rpms(environment):
+    hass, coordinator, entry = environment
+    level = FavoriteLevel(entry(MC6))
+    level.hass = hass
+    level._device.write = Mock()
+    for index, rpm in enumerate((400, 480, 650, 700, 800, 930, 1100, 1250, 1370, 1530)):
+        option = f"Level {index} — {rpm} RPM"
+        assert level.options[index] == option
+        await level.async_select_option(option)
+        level._device.write.assert_called_with("favorite_level", index)
+    assert level._device.write.call_count == 10
+    with pytest.raises(HomeAssistantError):
+        await level.async_select_option("400")
+    coordinator.data["favorite_level"] = 99
+    assert level.current_option is None
+
+
+@pytest.mark.asyncio
+async def test_favorite_number_registry_removed_and_select_created(environment):
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.xiaomi_miio import number, select
+
+    hass, _coordinator, entry = environment
+    config = entry(MC6)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "number", "xiaomi_miio", "favorite_level_test-air-device"
+    )
+    other = registry.async_get_or_create(
+        "number", "xiaomi_miio", "favorite_level_other-device"
+    )
+    numbers, selects = [], []
+    await number.async_setup_entry(hass, config, numbers.extend)
+    await select.async_setup_entry(hass, config, selects.extend)
+    assert registry.async_get(old.entity_id) is None
+    assert registry.async_get(other.entity_id) is not None
+    assert not any(e.key == "favorite_level" for e in numbers)
+    assert sum(isinstance(e, FavoriteLevel) for e in selects) == 1

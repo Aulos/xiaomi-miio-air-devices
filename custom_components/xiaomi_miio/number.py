@@ -4,10 +4,10 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any, override
 
-from miio import Device as MiioDevice
-
 from homeassistant.components.number import (
     DOMAIN as PLATFORM_DOMAIN,
+)
+from homeassistant.components.number import (
     NumberEntity,
     NumberEntityDescription,
 )
@@ -23,7 +23,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from miio import Device as MiioDevice
 
+from .air_devices import MC6
 from .air_entities import setup_air_entities
 from .const import (
     CONF_FLOW_TYPE,
@@ -294,6 +296,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Selectors from a config entry."""
     if setup_air_entities("number", config_entry, async_add_entities):
+        if config_entry.data[CONF_MODEL] == MC6:
+            registry = er.async_get(hass)
+            old_id = registry.async_get_entity_id(
+                "number", DOMAIN, f"favorite_level_{config_entry.unique_id}"
+            )
+            if old_id is not None:
+                registry.async_remove(old_id)
         return
     entities = []
     if config_entry.data[CONF_FLOW_TYPE] != CONF_DEVICE:
