@@ -2,6 +2,7 @@
 
 from typing import ClassVar
 
+from homeassistant.components.button import ButtonEntity
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.humidifier import (
     HumidifierDeviceClass,
@@ -9,17 +10,32 @@ from homeassistant.components.humidifier import (
     HumidifierEntityFeature,
 )
 from homeassistant.components.number import NumberEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import CONF_MODEL, UnitOfTemperature, UnitOfTime
+from homeassistant.const import (
+    CONF_MODEL,
+    EntityCategory,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.exceptions import HomeAssistantError
 from miio import DeviceException
 
-from .air_devices import AIR_MODELS, BOOL_WRITES, CA6, MC6, MODES
+from .air_devices import (
+    AIR_MODELS,
+    BOOL_WRITES,
+    CA6,
+    COUNTRY_CODES,
+    MC6,
+    MODES,
+    RANGES,
+    WRITE_ONLY,
+)
 from .entity import XiaomiCoordinatedMiioEntity
 
 
@@ -78,7 +94,11 @@ class AirPurifier6Plus(AirEntity, FanEntity):
     @property
     def preset_mode(self):
         return next(
-            (name for name, value in MODES[MC6].items() if value == self.reading("mode")),
+            (
+                name
+                for name, value in MODES[MC6].items()
+                if value == self.reading("mode")
+            ),
             None,
         )
 
@@ -117,7 +137,11 @@ class SmartmiHumidifier3(AirEntity, HumidifierEntity):
     @property
     def mode(self):
         return next(
-            (name for name, value in MODES[CA6].items() if value == self.reading("mode")),
+            (
+                name
+                for name, value in MODES[CA6].items()
+                if value == self.reading("mode")
+            ),
             None,
         )
 
@@ -157,8 +181,41 @@ SENSORS = {
     "fault": ("Fault code", None, None),
     "water_level": ("Water level", None, SensorDeviceClass.ENUM),
     "operating_status": ("Operating status", None, SensorDeviceClass.ENUM),
+    "air_quality": ("Air quality", None, SensorDeviceClass.ENUM),
+    # The schema declares no unit for 3/5, so do not label it as PM10 mass density.
+    "pm10": ("Dust (raw)", None, None),
+    "favorite_square": ("Favorite coverage area (raw)", None, None),
+    "reboot_cause": ("Reboot cause", None, SensorDeviceClass.ENUM),
+    "motor_rpm_set": ("Motor target speed", "rpm", None),
+    "motor_rpm_feedback": ("Motor actual speed", "rpm", None),
+    "iic_error_count": ("I²C error count", None, None),
+    "common_property": ("Common property (raw)", None, None),
+}
+DIAGNOSTIC_SENSORS = {
+    "reboot_cause",
+    "motor_rpm_set",
+    "motor_rpm_feedback",
+    "iic_error_count",
+    "common_property",
+    "favorite_square",
+    "pm10",
 }
 ENUM_SENSORS = {
+    "air_quality": {
+        0: "excellent",
+        1: "good",
+        2: "moderate",
+        3: "poor",
+        4: "heavy_pollution",
+        5: "hazardous",
+    },
+    "reboot_cause": {
+        0: "power",
+        1: "external_pin",
+        2: "software",
+        3: "watchdog",
+        4: "unknown",
+    },
     "water_level": {0: "empty", 1: "normal", 2: "full"},
     "operating_status": {1: "off", 2: "humidifying", 3: "drying", 4: "cleaning"},
 }
@@ -170,6 +227,9 @@ class AirSensor(AirEntity, SensorEntity):
         super().__init__(entry, key, name)
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
+        if key in DIAGNOSTIC_SENSORS:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+            self._attr_entity_registry_enabled_default = False
         if key in ENUM_SENSORS:
             self._attr_options = list(ENUM_SENSORS[key].values())
         elif unit is not None:
@@ -178,7 +238,17 @@ class AirSensor(AirEntity, SensorEntity):
     @property
     def native_value(self):
         value = self.reading(self.key)
-        return ENUM_SENSORS[self.key].get(value) if self.key in ENUM_SENSORS else value
+        if self.key in ENUM_SENSORS:
+            return ENUM_SENSORS[self.key].get(value)
+        # HA states have a 255-character limit; preserve the full opaque value in attributes.
+        return value[:255] if isinstance(value, str) else value
+
+    @property
+    def extra_state_attributes(self):
+        value = self.reading(self.key)
+        if isinstance(value, str) and len(value) > 255:
+            return {"raw_value": value}
+        return None
 
 
 class AirSwitch(AirEntity, SwitchEntity):
@@ -204,6 +274,71 @@ class FavoriteLevel(AirEntity, NumberEntity):
     @property
     def native_value(self):
         return self.reading("favorite_level")
+
+
+class AirSelect(AirEntity, SelectEntity):
+    def __init__(self, entry, key, name, choices, *, advanced=False):
+        super().__init__(entry, key, name)
+        self.choices = choices
+        self._attr_options = list(choices.values())
+        self._attr_entity_category = EntityCategory.CONFIG
+        if advanced:
+            self._attr_entity_registry_enabled_default = False
+
+    @property
+    def current_option(self):
+        return self.choices.get(self.reading(self.key))
+
+    async def async_select_option(self, option):
+        for value, label in self.choices.items():
+            if option == label:
+                await self.write(self.key, value)
+                return
+        raise HomeAssistantError("Unsupported option")
+
+
+class AdvancedNumber(AirEntity, NumberEntity):
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False
+    _attr_native_step = 1
+
+    def __init__(self, entry, key, name):
+        super().__init__(entry, key, name)
+        self._attr_native_min_value, self._attr_native_max_value = RANGES[MC6][key]
+
+    @property
+    def available(self):
+        if self.key in WRITE_ONLY[MC6]:
+            return self.coordinator.last_update_success
+        return super().available
+
+    @property
+    def native_value(self):
+        # Debug counters are write-only: never invent a readback value.
+        return self.reading(self.key)
+
+    async def async_set_native_value(self, value):
+        await self.write(self.key, value)
+
+
+class AirButton(AirEntity, ButtonEntity):
+    def __init__(self, entry, action_key, name):
+        super().__init__(entry, action_key, name)
+        self._attr_entity_category = EntityCategory.CONFIG
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def available(self):
+        return self.coordinator.last_update_success
+
+    async def async_press(self):
+        try:
+            await self.hass.async_add_executor_job(
+                self._device.perform_action, self.key
+            )
+        except (DeviceException, ValueError) as err:
+            raise HomeAssistantError(f"Unable to run {self.key}: {err}") from err
+        await self.coordinator.async_request_refresh()
 
 
 def setup_air_entities(platform, entry, async_add_entities):
@@ -237,5 +372,38 @@ def setup_air_entities(platform, entry, async_add_entities):
         ]
     elif platform == "number" and model == MC6:
         entities = [FavoriteLevel(entry, "favorite_level", "Favorite level")]
+        entities.extend(
+            AdvancedNumber(entry, key, name)
+            for key, name in {
+                "update_heartbeat": "AQI update heartbeat (raw)",
+                "filter_debug_used_time": "Filter debug used time",
+                "filter_debug_used_life": "Filter debug used life",
+            }.items()
+        )
+    elif platform == "select" and model == MC6:
+        entities = [
+            AirSelect(
+                entry, "brightness", "Screen brightness", {0: "Dim", 1: "On", 2: "Mid"}
+            ),
+            AirSelect(
+                entry,
+                "fan_level",
+                "Fan level",
+                {0: "Level 1", 1: "Level 2", 2: "Level 3"},
+            ),
+            AirSelect(
+                entry, "country_code", "Country code", COUNTRY_CODES, advanced=True
+            ),
+        ]
+    elif platform == "button" and model == MC6:
+        entities = [
+            AirButton(entry, key, name)
+            for key, name in {
+                "toggle": "Toggle power",
+                "reset_filter": "Reset filter life",
+                "toggle_mode": "Cycle mode",
+                "toggle_fan_level": "Cycle fan level",
+            }.items()
+        ]
     async_add_entities(entities)
     return True

@@ -11,6 +11,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("host")
     parser.add_argument("model", choices=["xiaomi.airp.mc6", "zhimi.humidifier.ca6"])
+    parser.add_argument(
+        "--raw", action="store_true", help="Include MIoT per-property result codes"
+    )
     args = parser.parse_args()
     module_path = (
         Path(__file__).resolve().parents[1]
@@ -33,7 +36,11 @@ def main():
             {
                 "model": info.model,
                 "firmware": info.firmware_version,
-                "properties": device.status(),
+                "properties": (
+                    device.get_properties_for_mapping(max_properties=5)
+                    if args.raw
+                    else device.status()
+                ),
             },
             indent=2,
         )

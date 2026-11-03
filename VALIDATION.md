@@ -12,3 +12,7 @@
 ## 2026.10.4.2
 
 Fixed a shared `value` helper shadowing NumberEntity.value. The regression test checks HA state is numeric for Favorite levels 9 and 0 and unavailable for a missing reading. All 33 tests pass against HA 2026.10.4; Ruff passes on changed Python files. User confirmed individual and batched reads of Favorite level (9/1), code 0, value 9. Hardware verification of the updated UI remains pending.
+
+## 2026.10.4.3
+
+54 tests pass against HA 2026.10.4. Extended tests check schema property/action IDs, write-only exclusion from polling, country/range validation, exact action messages and rejection handling, select commands, diagnostic defaults, raw string state limits, and unavailable/unknown values. Ruff and compilation pass for changed modules. No live commands were sent; added MC6 capabilities are schema-based and await local hardware validation. Existing entity IDs and CA6 behavior are retained.

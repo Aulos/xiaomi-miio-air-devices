@@ -31,6 +31,15 @@ MAPPINGS = {
         "buzzer": (7, 1),
         "child_lock": (8, 1),
         "favorite_level": (9, 1),
+        "air_quality": (3, 3),
+        "update_heartbeat": (12, 1),
+        "favorite_square": (13, 1),
+        "reboot_cause": (13, 2),
+        "motor_rpm_set": (13, 3),
+        "motor_rpm_feedback": (13, 4),
+        "iic_error_count": (13, 6),
+        "common_property": (13, 8),
+        "country_code": (13, 11),
     },
     CA6: {
         "power": (2, 1),
@@ -57,8 +66,38 @@ BOOL_WRITES = {
     CA6: {"power", "dry", "buzzer", "child_lock"},
 }
 RANGES = {
-    MC6: {"fan_level": (0, 2), "brightness": (0, 2), "favorite_level": (0, 9)},
+    MC6: {
+        "fan_level": (0, 2),
+        "brightness": (0, 2),
+        "favorite_level": (0, 9),
+        "update_heartbeat": (0, 65535),
+        "filter_debug_used_time": (0, 10000),
+        "filter_debug_used_life": (0, 100),
+    },
     CA6: {"brightness": (0, 2), "target_humidity": (30, 60)},
+}
+
+
+WRITE_ONLY = {
+    MC6: {"filter_debug_used_time": (10, 1), "filter_debug_used_life": (10, 2)},
+    CA6: {},
+}
+COUNTRY_CODES = {
+    2: "EU",
+    1: "US",
+    82: "KR",
+    886: "TW",
+    66: "TH",
+    44: "UK",
+    91: "IN",
+    86: "CN",
+    81: "JP",
+}
+ACTIONS = {
+    "toggle": (2, 1),
+    "reset_filter": (4, 1),
+    "toggle_mode": (13, 1),
+    "toggle_fan_level": (13, 2),
 }
 
 
@@ -97,6 +136,8 @@ class AirDevice(MiotDevice):
         model = self.air_model
         if key in BOOL_WRITES[model]:
             valid = type(value) is bool
+        elif model == MC6 and key == "country_code":
+            valid = type(value) is int and value in COUNTRY_CODES
         elif key == "mode":
             valid = type(value) is int and value in MODES[model].values()
         elif key in RANGES[model]:
@@ -113,8 +154,13 @@ class AirDevice(MiotDevice):
             valid = False
         if not valid:
             raise ValueError(f"Invalid value for {model} property {key}")
-        result = self.set_property(key, value)
-        prop = self.mapping[key]
+        if key in WRITE_ONLY[model]:
+            siid, piid = WRITE_ONLY[model][key]
+            prop = {"siid": siid, "piid": piid}
+            result = self.send("set_properties", [{"did": key, **prop, "value": value}])
+        else:
+            prop = self.mapping[key]
+            result = self.set_property(key, value)
         if (
             not isinstance(result, list)
             or len(result) != 1
@@ -124,4 +170,19 @@ class AirDevice(MiotDevice):
             or result[0].get("piid") != prop["piid"]
         ):
             raise DeviceException(f"MIoT rejected property {key}")
+        return result
+
+    def perform_action(self, key):
+        """Only explicitly exposed no-argument MC6 actions are permitted."""
+        if self.air_model != MC6 or key not in ACTIONS:
+            raise ValueError(f"Unsupported action: {key}")
+        siid, aiid = ACTIONS[key]
+        result = self.send("action", {"did": key, "siid": siid, "aiid": aiid, "in": []})
+        if (
+            not isinstance(result, dict)
+            or result.get("code") != 0
+            or result.get("siid") != siid
+            or result.get("aiid") != aiid
+        ):
+            raise DeviceException(f"MIoT rejected action {key}")
         return result

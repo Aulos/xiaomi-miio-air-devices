@@ -14,7 +14,10 @@ from miio import DeviceException
 from custom_components.xiaomi_miio import get_platforms
 from custom_components.xiaomi_miio.air_devices import CA6, MC6, AirDevice
 from custom_components.xiaomi_miio.air_entities import (
+    AdvancedNumber,
+    AirButton,
     AirPurifier6Plus,
+    AirSelect,
     AirSensor,
     FavoriteLevel,
     SmartmiHumidifier3,
@@ -146,3 +149,55 @@ async def test_favorite_level_exposes_numeric_ha_state(environment):
     assert level.state == 0
     coordinator.data["favorite_level"] = None
     assert not level.available
+
+
+@pytest.mark.asyncio
+async def test_extended_entities_defaults_and_states(environment):
+    hass, coordinator, entry = environment
+    from homeassistant.const import EntityCategory
+
+    coordinator.data.update(
+        air_quality=0, motor_rpm_feedback=450, common_property="x" * 300
+    )
+    sensor = AirSensor(entry(MC6), "air_quality")
+    assert sensor.native_value == "excellent"
+    diagnostic = AirSensor(entry(MC6), "motor_rpm_feedback")
+    assert diagnostic.native_value == 450
+    assert diagnostic.entity_category == EntityCategory.DIAGNOSTIC
+    assert not diagnostic.entity_registry_enabled_default
+    raw = AirSensor(entry(MC6), "common_property")
+    assert len(raw.native_value) == 255
+    assert raw.extra_state_attributes == {"raw_value": "x" * 300}
+    debug = AdvancedNumber(entry(MC6), "filter_debug_used_life", "Debug")
+    debug.hass = hass
+    assert debug.available
+    assert debug.native_value is None
+    assert debug.state is None
+    assert not debug.entity_registry_enabled_default
+
+
+@pytest.mark.asyncio
+async def test_brightness_and_action_commands(environment):
+    hass, coordinator, entry = environment
+    config = entry(MC6)
+    config.runtime_data.device.write = Mock()
+    config.runtime_data.device.perform_action = Mock()
+    select = AirSelect(
+        config, "brightness", "Brightness", {0: "Dim", 1: "On", 2: "Mid"}
+    )
+    select.hass = hass
+    coordinator.data["brightness"] = 2
+    assert select.current_option == "Mid"
+    await select.async_select_option("Dim")
+    config.runtime_data.device.write.assert_called_once_with("brightness", 0)
+    with pytest.raises(HomeAssistantError):
+        await select.async_select_option("Invalid")
+    button = AirButton(config, "reset_filter", "Reset")
+    button.hass = hass
+    assert button.available
+    assert not button.entity_registry_enabled_default
+    await button.async_press()
+    config.runtime_data.device.perform_action.assert_called_once_with("reset_filter")
+    config.runtime_data.device.perform_action.side_effect = DeviceException("rejected")
+    with pytest.raises(HomeAssistantError):
+        await button.async_press()

@@ -8,12 +8,15 @@ import pytest
 from miio import DeviceException
 
 from custom_components.xiaomi_miio.air_devices import (
+    ACTIONS,
     BOOL_WRITES,
     CA6,
+    COUNTRY_CODES,
     MAPPINGS,
     MC6,
     MODES,
     RANGES,
+    WRITE_ONLY,
     AirDevice,
 )
 
@@ -32,7 +35,8 @@ def test_mapping_matches_primary_schema(model, filename):
     for key, pair in MAPPINGS[model].items():
         assert "read" in props[pair]["access"], key
     for key in BOOL_WRITES[model] | set(RANGES[model]) | {"mode"}:
-        assert "write" in props[MAPPINGS[model][key]]["access"], key
+        pair = {**MAPPINGS[model], **WRITE_ONLY[model]}[key]
+        assert "write" in props[pair]["access"], key
     assert set(MODES[model].values()) <= {
         v["value"] for v in props[MAPPINGS[model]["mode"]]["value-list"]
     }
@@ -124,3 +128,106 @@ def test_rejected_or_mismatched_write_is_not_success(reply):
     device.send = Mock(return_value=reply)
     with pytest.raises(DeviceException):
         device.write("power", True)
+
+
+def test_extended_mc6_schema():
+    spec = json.loads(
+        (Path(__file__).parents[1] / "xiaomi-airp-mc6-spec.json").read_text()
+    )
+    properties = {
+        (s["iid"], p["iid"]): p
+        for s in spec["services"]
+        for p in s.get("properties", [])
+    }
+    actions = {
+        (s["iid"], a["iid"]): a for s in spec["services"] for a in s.get("actions", [])
+    }
+    for key, pair in WRITE_ONLY[MC6].items():
+        assert properties[pair]["access"] == ["write"]
+        assert tuple(properties[pair]["value-range"][:2]) == RANGES[MC6][key]
+    assert set(COUNTRY_CODES) == {
+        v["value"] for v in properties[(13, 11)]["value-list"]
+    }
+    for pair in ACTIONS.values():
+        assert actions[pair]["in"] == []
+
+
+def test_read_poll_does_not_query_write_only_counters():
+    device = make_device()
+
+    def reply(method, params):
+        assert method == "get_properties"
+        assert not any(p["siid"] == 10 for p in params)
+        return [
+            {**p, "code": 0, "value": True if p["did"] == "power" else 0}
+            for p in params
+        ]
+
+    device.send = Mock(side_effect=reply)
+    assert device.status()["power"] is True
+
+
+@pytest.mark.parametrize(
+    "key,value,pair",
+    [
+        ("filter_debug_used_time", 12.0, (10, 1)),
+        ("filter_debug_used_life", 50, (10, 2)),
+        ("update_heartbeat", 30, (12, 1)),
+        ("country_code", 2, (13, 11)),
+    ],
+)
+def test_extended_write_encoding(key, value, pair):
+    device = make_device()
+    device.send = Mock(return_value=[{"siid": pair[0], "piid": pair[1], "code": 0}])
+    device.write(key, value)
+    device.send.assert_called_once_with(
+        "set_properties",
+        [{"did": key, "siid": pair[0], "piid": pair[1], "value": int(value)}],
+    )
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("country_code", 0),
+        ("country_code", True),
+        ("filter_debug_used_life", 101),
+        ("update_heartbeat", -1),
+    ],
+)
+def test_extended_invalid_writes(key, value):
+    device = make_device()
+    device.send = Mock()
+    with pytest.raises(ValueError):
+        device.write(key, value)
+    device.send.assert_not_called()
+
+
+@pytest.mark.parametrize("key,pair", list(ACTIONS.items()))
+def test_action_wire_contract(key, pair):
+    device = make_device()
+    device.send = Mock(
+        return_value={"siid": pair[0], "aiid": pair[1], "code": 0, "out": []}
+    )
+    device.perform_action(key)
+    device.send.assert_called_once_with(
+        "action", {"did": key, "siid": pair[0], "aiid": pair[1], "in": []}
+    )
+
+
+@pytest.mark.parametrize(
+    "reply", [None, [], {"code": -1}, {"code": 0, "siid": 13, "aiid": 1}]
+)
+def test_action_failure_is_not_success(reply):
+    device = make_device()
+    device.send = Mock(return_value=reply)
+    with pytest.raises(DeviceException):
+        device.perform_action("reset_filter")
+
+
+def test_actions_not_available_on_ca6():
+    device = make_device(CA6)
+    device.send = Mock()
+    with pytest.raises(ValueError):
+        device.perform_action("reset_filter")
+    device.send.assert_not_called()
